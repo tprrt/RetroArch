@@ -156,6 +156,10 @@ bool drm_get_encoder(int fd)
       g_drm_encoder = NULL;
    }
 
+   /* A connected connector may not be driven yet: use its first encoder */
+   if (!g_drm_encoder && g_drm_connector->count_encoders > 0)
+      g_drm_encoder = drmModeGetEncoder(fd, g_drm_connector->encoders[0]);
+
    if (!g_drm_encoder)
    {
       RARCH_WARN("[DRM] Couldn't find DRM encoder.\n");
@@ -175,9 +179,43 @@ bool drm_get_encoder(int fd)
    return true;
 }
 
+/* Find a CRTC the encoder can use, which no other encoder is driving */
+static uint32_t drm_find_free_crtc(int fd)
+{
+   int i, j;
+   uint32_t fallback = 0;
+
+   for (i = 0; i < g_drm_resources->count_crtcs; i++)
+   {
+      bool used = false;
+
+      if (!(g_drm_encoder->possible_crtcs & (1u << i)))
+         continue;
+      if (!fallback)
+         fallback = g_drm_resources->crtcs[i];
+
+      for (j = 0; j < g_drm_resources->count_encoders && !used; j++)
+      {
+         drmModeEncoder *enc = drmModeGetEncoder(fd,
+               g_drm_resources->encoders[j]);
+         if (!enc)
+            continue;
+         used = enc->crtc_id == g_drm_resources->crtcs[i];
+         drmModeFreeEncoder(enc);
+      }
+
+      if (!used)
+         return g_drm_resources->crtcs[i];
+   }
+
+   return fallback;
+}
+
 void drm_setup(int fd)
 {
    g_crtc_id        = g_drm_encoder->crtc_id;
+   if (!g_crtc_id)
+      g_crtc_id     = drm_find_free_crtc(fd);
    g_connector_id   = g_drm_connector->connector_id;
    g_orig_crtc      = drmModeGetCrtc(fd, g_crtc_id);
    if (!g_orig_crtc)
