@@ -1282,6 +1282,14 @@ static bool gfx_ctx_drm_set_video_mode(void *data,
       }
    }
 
+   /* The requested size may not exist on this display */
+   if (!g_drm_mode && g_drm_connector->count_modes > 0)
+   {
+      RARCH_WARN("[KMS] No mode for %ux%u, falling back to mode 0 (default).\n",
+            width, height);
+      g_drm_mode = &g_drm_connector->modes[0];
+   }
+
    if (!g_drm_mode)
    {
       RARCH_ERR("[KMS] Did not find suitable video mode for %ux%u.\n",
