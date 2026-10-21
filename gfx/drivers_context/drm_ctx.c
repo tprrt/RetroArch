@@ -35,6 +35,7 @@
 #include <libdrm/drm.h>
 #include <gbm.h>
 
+#include <features/features_cpu.h>
 #include <lists/dir_list.h>
 #include <lists/string_list.h>
 #include <string/stdstring.h>
@@ -83,6 +84,9 @@ typedef struct gfx_ctx_drm_data
    int interval;
    unsigned fb_width;
    unsigned fb_height;
+   unsigned monitor_index;
+   retro_time_t next_display_check;
+   uint32_t display_candidate;
    /* Taken when the context is made, which a change of the setting
     * redoes: swap_buffers runs on the thread that draws */
    unsigned max_swapchain_images;
@@ -148,6 +152,8 @@ static enum gfx_ctx_api drm_api           = GFX_CTX_NONE;
 static unsigned drm_fb_depth               = 24;
 static drmModeModeInfo gfx_ctx_crt_switch_mode;
 static bool switch_mode                   = false;
+/* Connector a restart was already requested for, kept across restarts */
+static uint32_t drm_restart_connector     = 0;
 
 #ifdef HAVE_MODELINE
 static float mode_vrefresh(drmModeModeInfo *mode)
@@ -571,12 +577,52 @@ static void gfx_ctx_drm_swap_interval(void *data, int interval)
       RARCH_WARN("[KMS] Swap intervals > 1 currently not supported. Will use swap interval of 1.\n");
 }
 
+/* Restart the video driver when another display has to be used, because
+ * one was plugged in or the one in use was unplugged. */
+static void gfx_ctx_drm_check_display(gfx_ctx_drm_data_t *drm)
+{
+   uint32_t connector_id;
+   retro_time_t now = cpu_features_get_time_usec();
+
+   /* A lease is for one connector */
+   if (!drm || drm->leased || now < drm->next_display_check)
+      return;
+   drm->next_display_check = now + 1000000;
+
+   connector_id = drm_find_connected_connector(g_drm_fd, drm->monitor_index);
+
+   if (!connector_id || connector_id == g_connector_id)
+   {
+      drm->display_candidate = 0;
+      drm_restart_connector  = 0;
+      return;
+   }
+
+   /* Already restarted for it, the connector cannot be used */
+   if (connector_id == drm_restart_connector)
+      return;
+
+   /* Wait for the status to be stable */
+   if (connector_id != drm->display_candidate)
+   {
+      drm->display_candidate = connector_id;
+      return;
+   }
+
+   RARCH_LOG("[KMS] Connector %u is now the display to use, restarting the video driver.\n",
+         connector_id);
+   drm_restart_connector = connector_id;
+   video_driver_modify_disp_flags(VIDEO_FLAG_DRIVER_REINIT, 0);
+}
+
 static void gfx_ctx_drm_check_window(void *data, bool *quit,
       bool *resize, unsigned *dims)
 {
    *resize = false;
    *quit   = (bool)frontend_driver_get_signal_handler_state();
    *dims = VIDEO_SCALE_PACK(g_drm_mode->hdisplay, g_drm_mode->vdisplay);
+
+   gfx_ctx_drm_check_display((gfx_ctx_drm_data_t*)data);
 }
 
 static void drm_flip_handler(int fd, unsigned frame,
@@ -1028,6 +1074,7 @@ static void *gfx_ctx_drm_init(void *video_driver)
 
    if (!drm)
       return NULL;
+   drm->monitor_index = video_monitor_index;
    drm->fd                   = -1;
    drm->max_swapchain_images = settings->uints.video_max_swapchain_images;
 

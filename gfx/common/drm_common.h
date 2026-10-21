@@ -58,6 +58,10 @@ void drm_free(void);
 
 bool drm_get_connector(int fd, unsigned monitor_index);
 
+/* Id of the connector drm_get_connector() would pick now, 0 if none.
+ * Only the cached connector state is read: nothing is probed. */
+uint32_t drm_find_connected_connector(int fd, unsigned monitor_index);
+
 float drm_get_refresh_rate(void *data);
 
 static INLINE bool drm_wait_flip(int timeout)

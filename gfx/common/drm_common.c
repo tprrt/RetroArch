@@ -121,6 +121,32 @@ bool drm_get_connector(int fd, unsigned monitor_index)
    return true;
 }
 
+uint32_t drm_find_connected_connector(int fd, unsigned monitor_index)
+{
+   unsigned i;
+   unsigned monitor_index_count = 0;
+   unsigned monitor             = MAX(monitor_index, 1);
+   uint32_t connector_id        = 0;
+
+   if (!g_drm_resources || fd < 0)
+      return 0;
+
+   for (i = 0; (int)i < g_drm_resources->count_connectors && !connector_id; i++)
+   {
+      drmModeConnectorPtr conn = drmModeGetConnectorCurrent(
+            fd, g_drm_resources->connectors[i]);
+
+      if (!conn)
+         continue;
+      if (     conn->connection == DRM_MODE_CONNECTED
+            && ++monitor_index_count == monitor)
+         connector_id = conn->connector_id;
+      drmModeFreeConnector(conn);
+   }
+
+   return connector_id;
+}
+
 float drm_calc_refresh_rate(drmModeModeInfo *mode)
 {
    unsigned int num, den;
