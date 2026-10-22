@@ -464,6 +464,14 @@ int main(void)
       CHECK(!drm_hotplug_needs_restart(FAKE_FD, 2, &lost),
             "even when it is the one the monitor index names");
 
+      g_connector_id = 91;
+      CHECK(drm_hotplug_needs_restart(FAKE_FD, 0, &lost),
+            "a display ranking before the one in use takes over by default");
+      CHECK(!lost, "a move is not a loss");
+      CHECK(!drm_hotplug_needs_restart(FAKE_FD, 1, &lost),
+            "an index set by the user keeps the output where it is");
+      g_connector_id = 90;
+
       conns[0].connected = 0;
       CHECK(drm_hotplug_needs_restart(FAKE_FD, 0, &lost),
             "the display in use unplugged moves to the one left");

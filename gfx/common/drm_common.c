@@ -173,7 +173,9 @@ bool drm_hotplug_needs_restart(int fd, unsigned monitor_index, bool *lost)
          *lost = false;
          return true;
       }
-      return false;
+      /* The default index is the first display: follow one that now
+       * ranks before the one in use */
+      return monitor_index == 0 && candidate && candidate != g_connector_id;
    }
 
    *lost = true;
